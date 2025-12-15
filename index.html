@@ -89,7 +89,7 @@
       border: 1px solid var(--border);
       background: #020617;
       aspect-ratio: 3 / 4;
-      touch-action: none; /* 모바일에서 핀치 줌용 */
+      touch-action: none;
     }
 
     video, canvas {
@@ -228,7 +228,7 @@
     <div class="header">
       <div>
         <div class="header-title">Vintage Live Cam</div>
-        <div class="header-sub">아이폰7 감성 필터 · 미러 · 줌</div>
+        <div class="header-sub">아이폰7 감성 필터 · 미러 · 줌 · 소프트 피부</div>
       </div>
       <div class="indicator">
         <div class="indicator-dot"></div>
@@ -243,8 +243,8 @@
     </div>
 
     <div class="filter-row">
-      <button class="btn-filter active" data-filter="clean">Clean</button>
-      <button class="btn-filter" data-filter="warm7">Old iPhone Warm</button>
+      <button class="btn-filter" data-filter="clean">Clean</button>
+      <button class="btn-filter active" data-filter="warm7">Old iPhone Warm</button>
       <button class="btn-filter" data-filter="softFilm">Soft Film</button>
       <button class="btn-filter" data-filter="mono">Soft Mono</button>
     </div>
@@ -286,12 +286,11 @@
 
     let currentStream = null;
     let usingFrontCamera = true;
-    let mirrorEnabled = true; // 전면 기본 미러
+    let mirrorEnabled = true;
     let currentFilter = "warm7";
     let lastCaptureDataUrl = null;
     let currentZoom = 1;
 
-    // 카메라 시작
     async function startCamera() {
       if (currentStream) {
         currentStream.getTracks().forEach(t => t.stop());
@@ -314,14 +313,13 @@
       }
     }
 
-    // CSS 필터
     function getCssFilter(filterName) {
       switch (filterName) {
         case "warm7":
-          // 아이폰7 느낌: 조금 따뜻하고, 채도/컨트라스트 살짝 업
           return "brightness(1.03) contrast(0.95) saturate(1.18) sepia(0.18) hue-rotate(-4deg)";
         case "softFilm":
-          return "brightness(1.04) contrast(0.9) saturate(0.95) sepia(0.25)";
+          // 컬러 유지: sepia를 낮추고 채도 조금만 줄임
+          return "brightness(1.05) contrast(0.9) saturate(0.95) sepia(0.15)";
         case "mono":
           return "grayscale(0.9) contrast(0.9) brightness(1.05)";
         case "clean":
@@ -332,14 +330,11 @@
 
     function applyLiveFilterAndTransform() {
       video.style.filter = getCssFilter(currentFilter);
-
       const scaleX = mirrorEnabled && usingFrontCamera ? -currentZoom : currentZoom;
       const scaleY = currentZoom;
-
       video.style.transform = `scale(${scaleX}, ${scaleY})`;
     }
 
-    // 사진 촬영 (캔버스에 필터+미러+줌 반영)
     function capturePhoto() {
       const w = video.videoWidth || 720;
       const h = video.videoHeight || 960;
@@ -348,22 +343,20 @@
       canvas.height = h;
 
       const ctx = canvas.getContext("2d");
-
       ctx.save();
 
-      // 미러 + 줌을 캔버스에도 적용
       ctx.translate(w / 2, h / 2);
       const scaleX = mirrorEnabled && usingFrontCamera ? -currentZoom : currentZoom;
       const scaleY = currentZoom;
       ctx.scale(scaleX, scaleY);
       ctx.translate(-w / 2, -h / 2);
-
       ctx.drawImage(video, 0, 0, w, h);
       ctx.restore();
 
-      const imageData = ctx.getImageData(0, 0, w, h);
-      const data = imageData.data;
+      let imageData = ctx.getImageData(0, 0, w, h);
+      let data = imageData.data;
 
+      // 색감 보정 (필터별)
       for (let i = 0; i < data.length; i += 4) {
         let r = data[i];
         let g = data[i + 1];
@@ -374,10 +367,11 @@
           g = g * 1.0;
           b = b * 0.96;
         } else if (currentFilter === "softFilm") {
+          // 컬러 유지: 평균 쪽으로 조금 당기되, 완전 흑백은 아님
           const avg = (r + g + b) / 3;
-          r = avg * 1.04;
-          g = avg * 0.98;
-          b = avg * 0.9;
+          r = avg * 1.03;
+          g = avg * 1.0;
+          b = avg * 0.95;
         } else if (currentFilter === "mono") {
           const avg = (r + g + b) / 3;
           r = g = b = avg * 1.02;
@@ -388,6 +382,54 @@
         data[i + 2] = Math.min(255, b);
       }
 
+      // 간단한 피부 보정: 전체를 살짝 밝게 + 피부톤 영역만 아주 약하게 블러 느낌
+      // 1) 전체 밝기 약간 ↑
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = Math.min(255, data[i] * 1.02);
+        data[i + 1] = Math.min(255, data[i + 1] * 1.02);
+        data[i + 2] = Math.min(255, data[i + 2] * 1.02);
+      }
+
+      // 2) 피부톤으로 추정되는 영역 약한 소프트닝
+      //   - 대략 R,G가 중간 이상이고, B가 상대적으로 조금 낮은 영역을 피부로 간주 (아주 러프한 방식)
+      const copy = new Uint8ClampedArray(data); // 원본 복사
+      const wStep = 4;
+
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const idx = (y * w + x) * 4;
+          const r = copy[idx];
+          const g = copy[idx + 1];
+          const b = copy[idx + 2];
+
+          const isSkinLike = r > 80 && g > 50 && b > 40 && r > b && r - g < 80;
+          if (!isSkinLike) continue;
+
+          // 주변 픽셀과 가볍게 평균 (아주 약한 블러)
+          let sumR = 0, sumG = 0, sumB = 0, count = 0;
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nx = x + dx;
+              const ny = y + dy;
+              const nIdx = (ny * w + nx) * 4;
+              sumR += copy[nIdx];
+              sumG += copy[nIdx + 1];
+              sumB += copy[nIdx + 2];
+              count++;
+            }
+          }
+          const avgR = sumR / count;
+          const avgG = sumG / count;
+          const avgB = sumB / count;
+
+          // 원본과 평균을 50:50 정도로 섞어서 소프트닝
+          data[idx] = (r * 0.5 + avgR * 0.5);
+          data[idx + 1] = (g * 0.5 + avgG * 0.5);
+          data[idx + 2] = (b * 0.5 + avgB * 0.5);
+        }
+      }
+
+      imageData.data.set(data);
       ctx.putImageData(imageData, 0, 0);
 
       const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
@@ -413,7 +455,6 @@
       document.body.removeChild(a);
     }
 
-    // 필터 버튼
     filterButtons.forEach(btn => {
       btn.addEventListener("click", () => {
         filterButtons.forEach(b => b.classList.remove("active"));
@@ -423,14 +464,12 @@
       });
     });
 
-    // 줌 슬라이더
     zoomSlider.addEventListener("input", () => {
       currentZoom = parseFloat(zoomSlider.value);
       zoomValue.textContent = currentZoom.toFixed(1) + "x";
       applyLiveFilterAndTransform();
     });
 
-    // 핀치 줌 (모바일)
     let lastDist = null;
     previewWrap.addEventListener("touchstart", (e) => {
       if (e.touches.length === 2) {
@@ -462,13 +501,11 @@
       lastDist = null;
     });
 
-    // 전/후면 전환
     flipBtn.addEventListener("click", () => {
       usingFrontCamera = !usingFrontCamera;
       startCamera().then(() => applyLiveFilterAndTransform());
     });
 
-    // 미러 토글
     mirrorBtn.addEventListener("click", () => {
       mirrorEnabled = !mirrorEnabled;
       mirrorBtn.textContent = mirrorEnabled ? "미러 ON" : "미러 OFF";
@@ -478,7 +515,7 @@
     captureBtn.addEventListener("click", capturePhoto);
     downloadBtn.addEventListener("click", downloadPhoto);
 
-    // 초기 상태: warm7 필터 + 미러 ON
+    // 초기 상태
     filterButtons.forEach(b => b.classList.remove("active"));
     document.querySelector('[data-filter="warm7"]').classList.add("active");
     currentFilter = "warm7";
