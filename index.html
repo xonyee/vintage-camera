@@ -318,10 +318,11 @@
 function getCssFilter(filterName) {
   switch (filterName) {
     case "warm7":
-      return "brightness(1.03) contrast(0.95) saturate(1.18) sepia(0.18) hue-rotate(-4deg)";
+      // 아이폰7 느낌: 과하지 않게 따뜻 + 부드럽고 채도 살짝만
+      return "brightness(1.02) contrast(0.93) saturate(1.05) sepia(0.12) hue-rotate(-3deg)";
     case "softFilm":
-      // 컬러 확실히 유지 + 살짝 바랜 느낌
-      return "brightness(1.06) contrast(0.92) saturate(0.98) sepia(0.08)";
+      // 더 낮은 대비 + 살짝 바랜 파스텔, 컬러는 유지
+      return "brightness(1.04) contrast(0.9) saturate(0.95) sepia(0.06)";
     case "mono":
       return "grayscale(0.9) contrast(0.9) brightness(1.05)";
     case "clean":
@@ -365,21 +366,22 @@ for (let i = 0; i < data.length; i += 4) {
   let b = data[i + 2];
 
   if (currentFilter === "warm7") {
-    r = r * 1.06;
-    g = g * 1.01;
-    b = b * 0.95;
+    // 전체적으로 약간 따뜻 + 대비 낮추고 채도 살짝만
+    r = r * 1.04;
+    g = g * 1.02;
+    b = b * 0.96;
   } else if (currentFilter === "softFilm") {
-    // 컬러 유지: 약간 바랜 느낌만
+    // 컬러 유지 + 부드러운 빈티지: 대비↓, 살짝 바랜 느낌
     const avg = (r + g + b) / 3;
-    r = r * 0.9 + avg * 0.1;
-    g = g * 0.9 + avg * 0.1;
-    b = b * 0.9 + avg * 0.1;
+    r = r * 0.92 + avg * 0.08;
+    g = g * 0.92 + avg * 0.08;
+    b = b * 0.92 + avg * 0.08;
   } else if (currentFilter === "mono") {
     const avg = (r + g + b) / 3;
     r = g = b = avg * 1.02;
   }
 
-  data[i] = Math.min(255, r);
+  data[i]     = Math.min(255, r);
   data[i + 1] = Math.min(255, g);
   data[i + 2] = Math.min(255, b);
 }
